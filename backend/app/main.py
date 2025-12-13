@@ -5,6 +5,10 @@ from threading import Thread
 from .persistence import init_db, SessionLocal
 from .models import ProtocolRequest, BlackboardState
 from .pipeline_runner import run_pipeline
+from fastapi.responses import StreamingResponse
+import time
+import json
+
 
 app = FastAPI(title="Cerina Protocol Foundry")
 
@@ -109,3 +113,47 @@ def approve_protocol(request_id: int, body: ApproveRequest):
     db.close()
 
     return {"status": "approved"}
+
+@app.get("/stream/{request_id}")
+def stream_protocol(request_id: int):
+    def event_generator():
+        last_version = 0
+
+        while True:
+            db = SessionLocal()
+
+            state = (
+                db.query(BlackboardState)
+                .filter(
+                    BlackboardState.request_id == request_id,
+                    BlackboardState.version > last_version,
+                )
+                .order_by(BlackboardState.version.asc())
+                .first()
+            )
+
+            db.close()
+
+            if state:
+                last_version = state.version
+
+                payload = {
+                    "version": state.version,
+                    "draft_text": state.draft_text,
+                    "notes": state.notes,
+                    "safety_score": state.safety_score,
+                    "empathy_score": state.empathy_score,
+                    "finalized": state.finalized,
+                }
+
+                yield f"data: {json.dumps(payload)}\n\n"
+
+                if state.finalized:
+                    break
+
+            time.sleep(1)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+    )
