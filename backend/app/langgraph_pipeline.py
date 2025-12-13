@@ -15,36 +15,51 @@ class GraphState(TypedDict):
 
 
 def drafter_agent(state: GraphState) -> GraphState:
-    notes = state.get("notes", [])
+    iteration = state.get("iteration", 0) + 1
+
+    notes = list(state.get("notes", []))
     notes.append({
         "agent": "drafter",
-        "message": "Draft revised based on user intent and prior feedback"
+        "message": f"Draft revision iteration {iteration}"
     })
 
-    state["draft_text"] = state.get("draft_text", "") + "\n\n[DRAFT UPDATE]"
-    state["iteration"] += 1
-    state["notes"] = notes
-    return state
+    return {
+        **state,
+        "draft_text": state.get("draft_text", "") + "\n\n[DRAFT UPDATE]",
+        "iteration": iteration,
+        "notes": notes,
+    }
+
 
 
 def safety_agent(state: GraphState) -> GraphState:
     score = evaluate_safety(state["draft_text"])
 
-    state["safety_score"] = score
-    state["notes"].append({
+    notes = list(state.get("notes", []))
+    notes.append({
         "agent": "safety",
         "message": f"Safety score evaluated at {score}"
     })
-    return state
+
+    return {
+        **state,
+        "safety_score": score,
+        "notes": notes,
+    }
 
 
 def critic_agent(state: GraphState) -> GraphState:
-    state["empathy_score"] = 0.9
-    state["notes"].append({
+    notes = list(state.get("notes", []))
+    notes.append({
         "agent": "critic",
         "message": "Clinical tone and empathy acceptable"
     })
-    return state
+
+    return {
+        **state,
+        "empathy_score": 0.9,
+        "notes": notes,
+    }
 
 
 SAFETY_THRESHOLD = 0.8
@@ -52,11 +67,18 @@ MAX_ITERATIONS = 5
 
 
 def supervisor_should_continue(state: GraphState) -> str:
+    # Force at least one revision cycle
+    if state["iteration"] < 1:
+        return "revise"
+
     if state["safety_score"] < SAFETY_THRESHOLD:
         return "revise"
+
     if state["iteration"] >= MAX_ITERATIONS:
         return "halt"
+
     return "finalize"
+
 
 
 def build_graph():
