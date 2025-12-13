@@ -9,7 +9,5 @@ if (!rootElement) {
 }
 
 ReactDOM.createRoot(rootElement).render(
-  <React.StrictMode>
-    <Dashboard />
-  </React.StrictMode>
+  <Dashboard />
 );

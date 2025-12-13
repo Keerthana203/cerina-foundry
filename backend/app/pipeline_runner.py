@@ -6,13 +6,19 @@ from .models import ProtocolRequest
 graph = build_graph()
 
 
-def run_pipeline(request_id: int, initial_text: str):
+def run_pipeline(request_id: int, user_intent: str):
     db = SessionLocal()
+
+    req = db.query(ProtocolRequest).get(request_id)
+    if not req or req.status != "running":
+        db.close()
+        return  # 🚨 prevent duplicate execution
 
     state = {
         "request_id": request_id,
         "version": 1,
-        "draft_text": initial_text,
+        "user_intent": user_intent,
+        "draft_text": "",
         "iteration": 0,
         "safety_score": 1.0,
         "empathy_score": 0.0,
@@ -20,15 +26,11 @@ def run_pipeline(request_id: int, initial_text: str):
     }
 
     final_state = graph.invoke(state)
-    final_state = {
-        **final_state,
-        "version": 1
-    }
+
+    final_state["finalized"] = True
+    final_state["version"] += 1
     checkpoint_state(final_state)
 
-    req = db.query(ProtocolRequest).get(request_id)
-    if req:
-        req.status = "completed"
-        db.commit()
-
+    req.status = "completed"
+    db.commit()
     db.close()

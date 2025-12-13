@@ -13,6 +13,7 @@ def checkpoint_state(state: dict):
         empathy_score=state["empathy_score"],
         iteration=state["iteration"],
         notes=state["notes"],
+        finalized=state.get("finalized", False),
     )
 
     db.add(bb)

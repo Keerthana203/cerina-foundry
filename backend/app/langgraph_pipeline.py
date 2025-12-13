@@ -1,12 +1,15 @@
 from typing import TypedDict, List, Dict, Any
 from langgraph.graph import StateGraph, END
 from .safety import evaluate_safety
+from .llm_client import call_llm
+
 
 
 
 class GraphState(TypedDict):
     request_id: int
     version: int
+    user_intent: str
     draft_text: str
     iteration: int
     safety_score: float
@@ -15,20 +18,78 @@ class GraphState(TypedDict):
 
 
 def drafter_agent(state: GraphState) -> GraphState:
-    iteration = state.get("iteration", 0) + 1
+    state["iteration"] += 1
 
-    notes = list(state.get("notes", []))
-    notes.append({
+    user_intent = state["user_intent"]
+    previous_draft = state.get("draft_text", "")
+    notes = state.get("notes", [])
+
+    prompt = f"""
+You are generating a CBT protocol artifact for clinical use.
+
+CRITICAL OUTPUT RULES:
+- Output MUST be a protocol document, NOT a conversation.
+- Do NOT address the user directly.
+- Do NOT include encouragement, coaching language, or motivational phrases.
+- Do NOT include introductions, conclusions, or next steps.
+- Do NOT include meta commentary or explanations.
+- Do NOT reference yourself, AI, agents, or revisions.
+
+STYLE:
+- Neutral, clinical, structured
+- Clear bullet points
+- Actionable steps
+- Empathetic but impersonal tone
+
+USER CONTEXT:
+{user_intent}
+
+PREVIOUS VERSION (if any):
+{previous_draft if previous_draft else "None"}
+
+AGENT FEEDBACK:
+{notes}
+
+OUTPUT FORMAT (MANDATORY):
+
+Title
+
+Context Summary (3–4 bullet points)
+
+Identified Cognitive Distortions
+- Bullet list with brief descriptions
+
+Behavioral Activation Plan
+- Step 1
+- Step 2
+- Step 3
+
+Cognitive Restructuring Exercises
+- Exercise name
+- Instructions (bullet points)
+
+Daily Micro-Habit System
+- Habit
+- Time commitment
+- Goal
+
+Safety Disclaimer
+- 2 short bullet points
+
+ONLY output the protocol content following this structure.
+"""
+
+
+    new_draft = call_llm(prompt)
+
+    state["draft_text"] = new_draft
+    state["notes"].append({
         "agent": "drafter",
-        "message": f"Draft revision iteration {iteration}"
+        "message": f"LLM-based draft revision (iteration {state['iteration']})"
     })
 
-    return {
-        **state,
-        "draft_text": state.get("draft_text", "") + "\n\n[DRAFT UPDATE]",
-        "iteration": iteration,
-        "notes": notes,
-    }
+    return state
+
 
 
 
@@ -67,8 +128,7 @@ MAX_ITERATIONS = 5
 
 
 def supervisor_should_continue(state: GraphState) -> str:
-    # Force at least one revision cycle
-    if state["iteration"] < 1:
+    if state["iteration"] < 2:
         return "revise"
 
     if state["safety_score"] < SAFETY_THRESHOLD:
