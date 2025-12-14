@@ -1,0 +1,26 @@
+flowchart TD
+    User[User / Clinician] --> UI[React Dashboard]
+
+    UI -->|Start Request| API[FastAPI Backend]
+
+    API --> Supervisor[LangGraph Supervisor]
+
+    Supervisor --> Drafter[Drafter Agent]
+    Drafter --> Safety[Safety Agent]
+    Safety --> Critic[Clinical Critic Agent]
+
+    Critic -->|Revise| Drafter
+    Critic -->|Finalize| Checkpoint[Checkpoint State]
+
+    Checkpoint --> DB[(SQLite Blackboard)]
+
+    UI <-->|Stream Updates| API
+
+    User -->|Approve| API
+    User -->|Decline| API
+    User -->|Request Revision| API
+
+    API -->|Resume Pipeline| Supervisor
+
+    MCP[MCP Client / Claude Desktop] -->|Tool Call| MCPServer[MCP Server]
+    MCPServer --> API
