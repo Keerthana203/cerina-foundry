@@ -26,3 +26,20 @@ export function approveProtocol(requestId: number, finalText: string) {
     body: JSON.stringify({ final_text: finalText }),
   });
 }
+
+export function declineProtocol(requestId: number, reason?: string) {
+  return fetch(`${API_BASE}/decline/${requestId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export function rerunProtocol(requestId: number, feedback: string) {
+  return fetch(`${API_BASE}/rerun/${requestId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ feedback }),
+  });
+}
+
