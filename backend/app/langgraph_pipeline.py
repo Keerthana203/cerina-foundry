@@ -1,8 +1,7 @@
 from typing import TypedDict, List, Dict, Any
 from langgraph.graph import StateGraph, END
 from .safety import evaluate_safety
-from .llm_client import call_llm
-
+from .llm_client import call_llm_stream
 
 
 
@@ -22,7 +21,7 @@ def drafter_agent(state: GraphState) -> GraphState:
 
     user_intent = state["user_intent"]
     previous_draft = state.get("draft_text", "")
-    notes = state.get("notes", [])
+    notes = list(state.get("notes", []))
 
     prompt = f"""
 You are generating a CBT protocol artifact for clinical use.
@@ -47,8 +46,9 @@ USER CONTEXT:
 PREVIOUS VERSION (if any):
 {previous_draft if previous_draft else "None"}
 
-AGENT FEEDBACK:
-{notes}
+AGENT FEEDBACK (summarized):
+- Safety score: {state["safety_score"]}
+- Iteration: {state["iteration"]}
 
 OUTPUT FORMAT (MANDATORY):
 
@@ -80,14 +80,17 @@ ONLY output the protocol content following this structure.
 """
 
 
-    new_draft = call_llm(prompt)
+    draft_chunks = []
+    for chunk in call_llm_stream(prompt):
+        draft_chunks.append(chunk)
+        state["draft_text"] = "".join(draft_chunks)  # 🔥 STREAM TO UI
 
-    state["draft_text"] = new_draft
-    state["notes"].append({
+    notes.append({
         "agent": "drafter",
         "message": f"LLM-based draft revision (iteration {state['iteration']})"
     })
 
+    state["notes"] = notes
     return state
 
 
@@ -128,16 +131,24 @@ MAX_ITERATIONS = 5
 
 
 def supervisor_should_continue(state: GraphState) -> str:
-    if state["iteration"] < 2:
+    # Safety failure → expensive revise
+    if state["safety_score"] < SAFETY_THRESHOLD:
         return "revise"
 
-    if state["safety_score"] < SAFETY_THRESHOLD:
+    # Optional: only revise if critic flags issues
+    critic_flags = any(
+        "flag" in n.get("message", "").lower()
+        for n in state["notes"]
+        if n.get("agent") == "critic"
+    )
+    if critic_flags:
         return "revise"
 
     if state["iteration"] >= MAX_ITERATIONS:
         return "halt"
 
     return "finalize"
+
 
 
 
