@@ -6,29 +6,34 @@ from .models import ProtocolRequest
 graph = build_graph()
 
 
-def run_pipeline(request_id: int, user_intent: str):
+def run_pipeline( request_id: int, user_intent: str, base_state: dict | None = None,):
     db = SessionLocal()
 
     req = db.query(ProtocolRequest).get(request_id)
     if not req or req.status != "running":
         db.close()
-        return  # 🚨 prevent duplicate execution
+        return
 
-    state = {
-        "request_id": request_id,
-        "version": 1,
-        "user_intent": user_intent,
-        "draft_text": "",
-        "iteration": 0,
-        "safety_score": 1.0,
-        "empathy_score": 0.0,
-        "notes": [],
-    }
+    # 🔥 THIS IS THE FIX
+    if base_state is not None:
+        state = base_state
+    else:
+        state = {
+            "request_id": request_id,
+            "version": 1,
+            "user_intent": user_intent,
+            "draft_text": "",
+            "iteration": 0,
+            "safety_score": 1.0,
+            "empathy_score": 0.0,
+            "notes": [],
+        }
 
     final_state = graph.invoke(state)
 
     final_state["finalized"] = True
     final_state["version"] += 1
+
     checkpoint_state(final_state)
 
     req.status = "completed"
